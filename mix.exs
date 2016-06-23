@@ -4,7 +4,7 @@ defmodule Pesterbot.Mixfile do
   def project do
     [app: :pesterbot,
      version: "0.0.1",
-     elixir: "~> 1.1",
+     elixir: "~> 1.2",
      build_embedded: Mix.env == :prod,
      start_permanent: Mix.env == :prod,
      deps: deps]
@@ -14,8 +14,8 @@ defmodule Pesterbot.Mixfile do
   #
   # Type "mix help compile.app" for more information
   def application do
-    [applications: [:logger, :cowboy, :plug, :httpoison]]
-     mod: {Pesterbot, []}]
+    [applications: [:logger, :cowboy, :plug, :httpoison, :timex, :quantum, :postgrex, :ecto],
+    mod: {Pesterbot, []}]
   end
 
   # Dependencies can be Hex packages:
@@ -30,6 +30,11 @@ defmodule Pesterbot.Mixfile do
   defp deps do
     [{:cowboy, "~> 1.0.0"},
      {:plug, "~> 1.0"},
-     {:httpoison, "~> 0.8.0"}]
+     {:httpoison, "~> 0.8.0"},
+     {:poison, "~> 2.0"},
+     {:quantum, "~> 1.7.1"},
+     {:timex, "~> 2.1"},
+     {:postgrex, ">= 0.0.0"},
+     {:ecto, "~> 2.0.0"}]
   end
 end
