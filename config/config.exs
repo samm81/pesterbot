@@ -28,3 +28,4 @@ use Mix.Config
 # here (which is why it is important to import them last).
 #
 #     import_config "#{Mix.env}.exs"
+config :quantum, cron: [ "*/15 * * * *": { Pesterbot.Router, :say_test } ]

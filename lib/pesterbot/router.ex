@@ -1,6 +1,6 @@
 import IEx
 
-defmodule PesterbotRouter do
+defmodule Pesterbot.Router do
   use Plug.Router
 
   use Plug.Debugger
@@ -15,9 +15,13 @@ defmodule PesterbotRouter do
   plug :match
   plug :dispatch
 
-  @verifyToken ""
-  @pageAccessToken ""
-  @sam_id ""
+  @app_id System.get_env("APP_ID")
+  @app_secret System.get_env("APP_SECRET")
+  @page_access_token System.get_env("PAGE_ACCESS_TOKEN")
+
+  @verify_token System.get_env("VERIFY_TOKEN")
+
+  @sam_id System.get_env("SAM_ID")
   @user_id_map %{ @sam_id => "sam" }
   @user_timezone_map %{ @sam_id => Timex.timezone("America/Los_Angeles", DateTime.today) }
 
@@ -29,7 +33,7 @@ defmodule PesterbotRouter do
   get "/webhook" do
     %{ "hub.mode" => "subscribe",
        "hub.challenge" => challenge,
-       "hub.verify_token" => @verifyToken } = fetch_query_params(conn).query_params
+       "hub.verify_token" => @verify_token } = fetch_query_params(conn).query_params
     send_resp(conn, 200, challenge)
   end
 
@@ -92,7 +96,7 @@ defmodule PesterbotRouter do
   def fb_send(message) do
     %HTTPoison.Response{ status_code: 200 } =
       HTTPoison.post!(
-        "https://graph.facebook.com/v2.6/me/messages?access_token=" <> @pageAccessToken,
+        "https://graph.facebook.com/v2.6/me/messages?access_token=" <> @page_access_token,
         message,
         %{ "Content-Type" => "application/json" }
       )
@@ -126,7 +130,7 @@ defmodule PesterbotRouter do
     )
     %HTTPoison.Response{ status_code: 200 } =
       HTTPoison.post!(
-        "https://graph.facebook.com/v2.6/me/thread_settings?access_token=" <> @pageAccessToken,
+        "https://graph.facebook.com/v2.6/me/thread_settings?access_token=" <> @page_access_token,
         message,
         %{ "Content-Type" => "application/json" }
       )
@@ -134,7 +138,7 @@ defmodule PesterbotRouter do
 
   def subscribe do
     %HTTPoison.Response{ status_code: 200, body: "{\"success\":true}" } =
-      HTTPoison.post!("https://graph.facebook.com/v2.6/me/subscribed_apps?access_token=" <> @pageAccessToken, "")
+      HTTPoison.post!("https://graph.facebook.com/v2.6/me/subscribed_apps?access_token=" <> @page_access_token, "")
   end
 
   def write_to_user_file(message, user_id) do
@@ -146,6 +150,24 @@ defmodule PesterbotRouter do
         File.touch(user)
         write_to_user_file(message, user_id)
     end
+  end
+
+  def get_ngrok_url do
+    %HTTPoison.Response{ status_code: 200, body: body } =
+      HTTPoison.get!("localhost:4040/api/tunnels")
+    %{ "tunnels" => [ %{ "public_url" => url } ] } = Poison.decode!(body)
+    url
+  end
+
+  def publish_webhook(ngrok_url) do
+    params = URI.encode_query( %{
+        "object" => "page",
+        "verify_token" => @verify_token,
+        "callback_url" => ngrok_url <> "/webhook",
+        "access_token" => @app_id <> "|" <> @app_secret
+      } )
+    %HTTPoison.Response{ status_code: 200, body: "{\"success\":true}" } =
+      HTTPoison.post!("https://graph.facebook.com/v2.6/1569233543371008/subscriptions?" <> params, "")
   end
 
 end
