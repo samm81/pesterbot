@@ -85,7 +85,10 @@ defmodule Pesterbot.Router do
     for attachment <- attachments do
       case attachment do
         %{ "type" => "image", "payload" => %{ "url" => url } } ->
-           write_to_user_file(url <> "\n", sender_id)
+           time_str =
+             Timezone.convert(DateTime.now, @default_time_zone)
+             |> Timex.format!("{UNIX}")
+           write_to_user_file("#{time_str}      #{url}\n", sender_id)
       end
     end
   end
@@ -110,9 +113,21 @@ defmodule Pesterbot.Router do
     send_resp(conn, 200, page)
   end
 
-  match _ do
-    IO.puts "unrecognized route"
+  post "/broadcast" do
     IO.puts inspect conn
+    case conn.host do
+      "localhost" ->
+        { :ok, "message=" <> message, _ } =
+          Plug.Conn.read_body(conn)
+
+        message_all_users!(message)
+        send_resp(conn, 200, "ok")
+      _ ->
+        send_resp(conn, 400, "oops")
+    end
+  end
+
+  match _ do
     send_resp(conn, 404, "oops")
   end
 

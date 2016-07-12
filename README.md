@@ -23,6 +23,14 @@ If you are using the ngrok functionality, make sure to start ngrok using only ht
 ngrok http 4000 -bind-tls=true
 ```
 
+## Internal API
+Pesterbot has (currently one) internal available endpoint that can be used to control it while it is running.
+
+#### Broadcast Message
+Broadcasts a message to all registered users. Will reject with a `400` if coming from a host other than `localhost`. Useful for informing users of updates or information.
+```
+curl -H "Content-Type: text/html" -X POST -d "message=hello world" localhost:4000/broadcast
+```
 
 ## Installation
 
