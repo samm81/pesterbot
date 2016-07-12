@@ -90,6 +90,14 @@ defmodule Pesterbot.Router do
     end
   end
 
+  get "/users" do
+    page =
+      for file <- File.ls!("users") do
+        "<a href='users/" <> file <> "'>" <> file <> "</a>"
+      end |> Enum.join("<br/><br/>")
+    send_resp(conn, 200, page)
+  end
+
   get "/users/:user" do
     user = "users/" <> user
     page =
@@ -131,16 +139,20 @@ defmodule Pesterbot.Router do
     }) |> fb_send!
   end
 
-  def pester_users! do
+  def message_all_users!(message) do
     user_ids =
       File.read!(@users_file)
       |> String.split("\n")
     for user_id <- user_ids do
-      case say!("watcha up to", user_id) do
+      case say!(message, user_id) do
         %HTTPoison.Response{ status_code: 200 } -> :ok
         %HTTPoison.Response{ status_code: 400 } -> :err
       end
     end
+  end
+
+  def pester_users! do
+    message_all_users!("watcha up to")
   end
 
   def greeting_text! do
