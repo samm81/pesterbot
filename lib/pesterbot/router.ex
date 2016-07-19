@@ -1,4 +1,5 @@
 import IEx
+import Ecto.Query
 
 defmodule Pesterbot.Router do
   use Plug.Router
@@ -9,6 +10,8 @@ defmodule Pesterbot.Router do
   use Timex
 
   alias Pesterbot.Repo
+  alias Pesterbot.User
+  alias Pesterbot.Post
 
   plug Plug.Logger
   plug Plug.Parsers, parsers: [:json], pass: ["text/*"], json_decoder: Poison
@@ -21,13 +24,7 @@ defmodule Pesterbot.Router do
 
   @verify_token System.get_env("VERIFY_TOKEN")
 
-  #@sam_id System.get_env("SAM_ID")
-  #@user_id_map %{ @sam_id => "sam" }
-  #@user_timezone_map %{ @sam_id => Timex.timezone("America/Los_Angeles", DateTime.today) }
-
   @default_time_zone Timex.timezone("America/Los_Angeles", DateTime.today)
-
-  @users_file "registered_users"
 
   def init(opts) do
     subscribe()
@@ -62,11 +59,11 @@ defmodule Pesterbot.Router do
   def parse_messaging( %{ "delivery" => _ } ), do: :noop
   def parse_messaging( %{ "sender" => %{ "id" => sender_id }, "message" => message } ) do
     registered_users =
-      File.read!(@users_file)
-      |> String.split("\n")
+      Repo.all(from user in User,
+               select: user.uid)
     case Enum.any?(registered_users, fn(user) -> user == sender_id end) do
       true -> :ok
-      false -> File.open!(@users_file, [:write, :append, :utf8]) |> IO.write("\n" <> sender_id)
+      false -> Repo.insert!(get_user!(sender_id))
     end
 
     parse_message(sender_id, message)
@@ -74,11 +71,10 @@ defmodule Pesterbot.Router do
   end
 
   def parse_message(sender_id, %{ "text" => text } ) do
-    #time = Timezone.convert(DateTime.now, @user_timezone_map[sender_id])
     time_str =
       Timezone.convert(DateTime.now, @default_time_zone)
       |> Timex.format!("{UNIX}")
-    write_to_user_file("#{time_str}      #{text}\n", sender_id)
+    Repo.insert!(%Post{uid: sender_id, time: time_str, data: text})
   end
 
   def parse_message(sender_id, %{ "attachments" => attachments } ) do
@@ -88,33 +84,40 @@ defmodule Pesterbot.Router do
            time_str =
              Timezone.convert(DateTime.now, @default_time_zone)
              |> Timex.format!("{UNIX}")
-           write_to_user_file("#{time_str}      #{url}\n", sender_id)
+           Repo.insert!(%Post{uid: sender_id, time: time_str, data: url})
       end
     end
   end
 
   get "/users" do
     page =
-      for file <- File.ls!("users") do
-        "<a href='users/" <> file <> "'>" <> file <> "</a>"
+      for user <- Repo.all(User) do
+        "<a href='/users/" <> user.uid <> "'>" <> user.first_name <> " " <> user.last_name <> "</a>"
       end |> Enum.join("<br/><br/>")
     send_resp(conn, 200, page)
   end
 
-  get "/users/:user" do
-    user = "users/" <> user
+  get "/users/:uid" do
+    posts =
+      Repo.all(from post in Post,
+               where: post.uid == ^uid,
+               order_by: post.inserted_at,
+               select: map(post, [:time, :data]))
     page =
-      case File.read(user) do
-        {:ok, contents} ->
-          contents
-        {:error, :enoent} ->
-          "user #{user} not available!"
+      case posts do
+        [] -> "user #{uid} not available!"
+        _ ->
+          posts
+          |> Enum.map(fn(post) -> post.time <> "\t" <> post.data end)
+          |> Enum.join("<br/>")
       end
+    page = "<html><head><meta charset=\"utf-8\"></head><body style\"font:Courier New\">" <> page <> "</body></html>"
+    |> String.replace("\t", "&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;")
+
     send_resp(conn, 200, page)
   end
 
   post "/broadcast" do
-    IO.puts inspect conn
     case conn.host do
       "localhost" ->
         { :ok, "message=" <> message, _ } =
@@ -140,13 +143,6 @@ defmodule Pesterbot.Router do
     )
   end
 
-  def say!(message, user_id) do
-    Poison.encode!( %{
-      "recipient" => %{ "id" => user_id },
-      "message" => %{ "text" => message }
-    }) |> fb_send!
-  end
-
   def read_receipt!(user_id) do
     Poison.encode!( %{
       "recipient" => %{ "id" => user_id },
@@ -154,16 +150,22 @@ defmodule Pesterbot.Router do
     }) |> fb_send!
   end
 
+  def message_user!(user_id, message) do
+    Poison.encode!( %{
+      "recipient" => %{ "id" => user_id },
+      "message" => %{ "text" => message }
+    }) |> fb_send!
+  end
+
+  def message_users!(user_ids, message) do
+    user_ids
+    |> Enum.map(fn(user_id) -> message_user!(user_id, message) end)
+  end
+
   def message_all_users!(message) do
-    user_ids =
-      File.read!(@users_file)
-      |> String.split("\n")
-    for user_id <- user_ids do
-      case say!(message, user_id) do
-        %HTTPoison.Response{ status_code: 200 } -> :ok
-        %HTTPoison.Response{ status_code: 400 } -> :err
-      end
-    end
+    Repo.all(from user in User,
+             select: user.uid)
+    |> message_users!(message)
   end
 
   def pester_users! do
@@ -188,22 +190,6 @@ defmodule Pesterbot.Router do
       HTTPoison.post!("https://graph.facebook.com/v2.6/me/subscribed_apps?access_token=" <> @page_access_token, "")
   end
 
-  def write_to_user_file(message, user_id) do
-    #user = @user_id_map[user_id]
-    user = "users/" <> user_id
-    case File.open(user, [:write, :append, :utf8]) do
-      { :ok, user_file } ->
-        IO.write(user_file, message)
-      { :error, :enoent } ->
-        case File.exists?("users") do
-          false -> File.mkdir!("users")
-          true -> :ok
-        end
-        File.touch(user)
-        write_to_user_file(message, user_id)
-    end
-  end
-
   def get_ngrok_url do
     %HTTPoison.Response{ status_code: 200, body: body } =
       HTTPoison.get!("localhost:4040/api/tunnels")
@@ -220,6 +206,13 @@ defmodule Pesterbot.Router do
     })
     %HTTPoison.Response{ status_code: 200, body: "{\"success\":true}" } =
       HTTPoison.post!("https://graph.facebook.com/v2.6/1569233543371008/subscriptions?" <> params, "")
+  end
+
+  def get_user!(user_id) do
+    %HTTPoison.Response{ status_code: 200, body: body } =
+      HTTPoison.get!("https://graph.facebook.com/v2.6/" <> user_id <> "?access_token=" <> @page_access_token)
+    user = Poison.decode!(body)
+    %User{first_name: user["first_name"], last_name: user["last_name"], timezone: Integer.to_string(user["timezone"]), uid: user_id}
   end
 
 end

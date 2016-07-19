@@ -11,6 +11,7 @@ defmodule Pesterbot do
       # Define workers and child supervisors to be supervised
       # worker(Pesterbot.Worker, [arg1, arg2, arg3]),
       Plug.Adapters.Cowboy.child_spec(:http, Pesterbot.Router, [], [port: port]),
+      supervisor(Pesterbot.Repo, [])
     ]
 
     # See http://elixir-lang.org/docs/stable/elixir/Supervisor.html
