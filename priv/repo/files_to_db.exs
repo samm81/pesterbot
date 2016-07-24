@@ -8,6 +8,7 @@ for file <- File.ls!("users" ) do
     fn (line) ->
       [time, data] = String.split(line, "      ")
       Pesterbot.Repo.insert!(%Pesterbot.Post{ uid: file, time: time, data: data })
+      :timer.sleep(500)
     end
   )
 end

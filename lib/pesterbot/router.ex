@@ -94,6 +94,7 @@ defmodule Pesterbot.Router do
       for user <- Repo.all(User) do
         "<a href='/users/" <> user.uid <> "'>" <> user.first_name <> " " <> user.last_name <> "</a>"
       end |> Enum.join("<br/><br/>")
+    page = "<html><head><meta charset=\"utf-8\"></head><body style\"font:Courier New\">" <> page <> "</body></html>"
     send_resp(conn, 200, page)
   end
 
