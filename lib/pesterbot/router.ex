@@ -27,8 +27,8 @@ defmodule Pesterbot.Router do
   @default_time_zone Timex.timezone("America/Los_Angeles", DateTime.today)
 
   def init(opts) do
-    subscribe()
-    greeting_text!()
+    #subscribe()
+    #greeting_text!()
   end
 
   get "/webhook" do
