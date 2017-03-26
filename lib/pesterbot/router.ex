@@ -1,4 +1,3 @@
-import IEx
 import Ecto.Query
 
 defmodule Pesterbot.Router do
@@ -6,12 +5,11 @@ defmodule Pesterbot.Router do
 
   use Plug.Debugger
 
-  Application.ensure_all_started :timex
-  use Timex
-
   alias Pesterbot.Repo
   alias Pesterbot.User
   alias Pesterbot.Post
+  alias Pesterbot.UserSupervisor
+  alias Pesterbot.UserServer
 
   plug Plug.Logger
   plug Plug.Parsers, parsers: [:json], pass: ["text/*"], json_decoder: Poison
@@ -24,9 +22,7 @@ defmodule Pesterbot.Router do
 
   @verify_token System.get_env("VERIFY_TOKEN")
 
-  @default_time_zone Timex.timezone("America/Los_Angeles", DateTime.today)
-
-  def init(opts) do
+  def init(_opts) do
     #subscribe()
     #greeting_text!()
   end
@@ -50,50 +46,26 @@ defmodule Pesterbot.Router do
     end
   end
 
-  def parse_entry( %{ "id" => pageid, "time" => time, "messaging" => messagings } ) do
+  def parse_entry( %{ "id" => _pageid, "time" => _time, "messaging" => messagings } ) do
     for messaging <- messagings do
       parse_messaging(messaging)
     end
   end
 
   def parse_messaging( %{ "delivery" => _ } ), do: :noop
+
   def parse_messaging( %{ "sender" => %{ "id" => sender_id }, "message" => message } ) do
-    registered_users =
-      Repo.all(from user in User,
-               select: user.uid)
-    case Enum.any?(registered_users, fn(user) -> user == sender_id end) do
-      true -> :ok
-      false -> Repo.insert!(get_user!(sender_id))
-    end
-
-    parse_message(sender_id, message)
-    read_receipt!(sender_id)
-  end
-
-  def parse_message(sender_id, %{ "text" => text } ) do
-    time_str =
-      Timezone.convert(DateTime.now, @default_time_zone)
-      |> Timex.format!("{UNIX}")
-    Repo.insert!(%Post{uid: sender_id, time: time_str, data: text})
-  end
-
-  def parse_message(sender_id, %{ "attachments" => attachments } ) do
-    for attachment <- attachments do
-      case attachment do
-        %{ "type" => "image", "payload" => %{ "url" => url } } ->
-           time_str =
-             Timezone.convert(DateTime.now, @default_time_zone)
-             |> Timex.format!("{UNIX}")
-           Repo.insert!(%Post{uid: sender_id, time: time_str, data: url})
-      end
-    end
+    # Ensure that the user has an associated UserServer
+    {:ok, _} = UserSupervisor.find_or_create_user(sender_id)
+    UserServer.respond_to_message(sender_id, message)
   end
 
   get "/users" do
     page =
-      for user <- Repo.all(User) do
-        "<a href='/users/" <> user.uid <> "'>" <> user.first_name <> " " <> user.last_name <> "</a>"
-      end |> Enum.join("<br/><br/>")
+      UserSupervisor.db_entries
+      |> Enum.map( fn %User{ first_name: first_name, last_name: last_name, uid: uid } ->
+        "<a href='/users/" <> uid <> "'>" <> first_name <> " " <> last_name <> "</a>"
+      end) |> Enum.join("<br/><br/>")
     page = "<html><head><meta charset=\"utf-8\"></head><body style\"font:Courier New\">" <> page <> "</body></html>"
     send_resp(conn, 200, page)
   end
@@ -131,11 +103,16 @@ defmodule Pesterbot.Router do
     end
   end
 
+  get "/" do
+    send_resp(conn, 200, "go to /users to see the list of users")
+  end
+
   match _ do
     send_resp(conn, 404, "oops")
   end
 
   HTTPoison.start
+
   def fb_send!(message) do
     HTTPoison.post!(
       "https://graph.facebook.com/v2.6/me/messages?access_token=" <> @page_access_token,
@@ -206,7 +183,7 @@ defmodule Pesterbot.Router do
         "access_token" => @app_id <> "|" <> @app_secret
     })
     %HTTPoison.Response{ status_code: 200, body: "{\"success\":true}" } =
-      HTTPoison.post!("https://graph.facebook.com/v2.6/1569233543371008/subscriptions?" <> params, "")
+      HTTPoison.post!("https://graph.facebook.com/v2.6/" <> @app_id <> "/subscriptions?" <> params, "")
   end
 
   def get_user!(user_id) do
