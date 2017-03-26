@@ -6,7 +6,7 @@ defmodule Pesterbot.Repo.Migrations.CreatePosts do
       add :uid, :string
       add :time, :string
       add :data, :text
-      timestamps
+      timestamps()
     end
   end
 end

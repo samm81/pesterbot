@@ -5,6 +5,6 @@ defmodule Pesterbot.Post do
     field :uid, :string
     field :time, :string
     field :data, :string
-    timestamps
+    timestamps()
   end
 end

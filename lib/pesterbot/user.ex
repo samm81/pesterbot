@@ -6,6 +6,6 @@ defmodule Pesterbot.User do
     field :first_name, :string
     field :last_name, :string
     field :timezone, :string
-    timestamps
+    timestamps()
   end
 end

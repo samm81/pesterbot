@@ -7,7 +7,7 @@ defmodule Pesterbot.Repo.Migrations.CreateUsers do
       add :first_name, :string
       add :last_name, :string
       add :timezone, :string
-      timestamps
+      timestamps()
     end
   end
 end
