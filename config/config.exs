@@ -45,5 +45,3 @@ config :pesterbot, Pesterbot.Repo,
   username: "postgres",
   password: "postgres",
   hostname: "localhost"
-
-config :quantum, cron: [ "*/15 * * * *": { Pesterbot.Router, :pester_users! } ]

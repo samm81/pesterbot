@@ -32,7 +32,6 @@ defmodule Pesterbot.Mixfile do
      {:plug, "~> 1.0"},
      {:httpoison, "~> 0.8.0"},
      {:poison, "~> 2.0"},
-     {:quantum, "~> 1.7.1"},
      {:timex, "~> 2.1"},
      {:postgrex, ">= 0.0.0"},
      {:ecto, "~> 2.0.0"}]
