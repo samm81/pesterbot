@@ -2,12 +2,16 @@ import Ecto.Query
 
 defmodule Pesterbot.Router do
   use Plug.Router
-
   use Plug.Debugger
+
+  Application.ensure_all_started :timex
+  use Timex
+
+  require Logger
 
   alias Pesterbot.Repo
   alias Pesterbot.User
-  alias Pesterbot.Post
+  alias Pesterbot.Message
   alias Pesterbot.UserSupervisor
   alias Pesterbot.UserServer
 
@@ -22,6 +26,8 @@ defmodule Pesterbot.Router do
 
   @verify_token System.get_env("VERIFY_TOKEN")
 
+  @default_time_zone "America/Chicago"
+
   def init(_opts) do
     #subscribe()
     #greeting_text!()
@@ -35,6 +41,7 @@ defmodule Pesterbot.Router do
   end
 
   post "/webhook" do
+    Logger.info("/webhook conn.params #{inspect(conn.params)}")
     parse_webhook_params(conn.params)
 
     send_resp(conn, 200, "ok")
@@ -46,18 +53,18 @@ defmodule Pesterbot.Router do
     end
   end
 
-  def parse_entry( %{ "id" => _pageid, "time" => _time, "messaging" => messagings } ) do
-    for messaging <- messagings do
-      parse_messaging(messaging)
+  def parse_entry( %{ "id" => _pageid, "time" => _time, "messaging" => messages } ) do
+    for message <- messages do
+      parse_message(message)
     end
   end
 
-  def parse_messaging( %{ "delivery" => _ } ), do: :noop
+  def parse_message( %{ "delivery" => _ } ), do: :noop
 
-  def parse_messaging( %{ "sender" => %{ "id" => sender_id }, "message" => message } ) do
+  def parse_message(message = %{ "sender" => %{ "id" => sender_id } }) do
     # Ensure that the user has an associated UserServer
     {:ok, _} = UserSupervisor.find_or_create_user(sender_id)
-    UserServer.respond_to_message(sender_id, message)
+    UserServer.handle_message(sender_id, message)
   end
 
   get "/users" do
@@ -71,17 +78,23 @@ defmodule Pesterbot.Router do
   end
 
   get "/users/:uid" do
-    posts =
-      Repo.all(from post in Post,
-               where: post.uid == ^uid,
-               order_by: post.inserted_at,
-               select: map(post, [:time, :data]))
+    messages =
+      Repo.all(from message in Message,
+               where: message.sender_id == ^uid,
+               order_by: message.timestamp,
+               select: map(message, [:timestamp, :message_text]))
     page =
-      case posts do
+      case messages do
         [] -> "user #{uid} not available!"
         _ ->
-          posts
-          |> Enum.map(fn(post) -> post.time <> "\t" <> post.data end)
+          messages
+          |> Enum.map(fn(message) ->
+            {:ok, datetime} = DateTime.from_unix(message.timestamp)
+            {:ok, dt_str} =
+              datetime
+              |> Timex.to_datetime(@default_time_zone)
+              |> Timex.format("{UNIX}")
+            dt_str <> "\t" <> message.message_text end)
           |> Enum.join("<br/>")
       end
     page = "<html><head><meta charset=\"utf-8\"></head><body style\"font:Courier New\">" <> page <> "</body></html>"
