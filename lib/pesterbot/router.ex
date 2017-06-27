@@ -89,11 +89,14 @@ defmodule Pesterbot.Router do
         _ ->
           messages
           |> Enum.map(fn(message) ->
-            {:ok, datetime} = DateTime.from_unix(message.timestamp)
+            datetime = Timex.from_unix(message.timestamp)
+            datetime = datetime |> Timex.to_datetime(@default_time_zone)
             {:ok, dt_str} =
-              datetime
-              |> Timex.to_datetime(@default_time_zone)
-              |> Timex.format("{UNIX}")
+              case datetime do
+                %Timex.AmbiguousDateTime{} -> datetime.after
+                %DateTime{} -> datetime
+                _ -> :error
+              end |> Timex.format("{UNIX}")
             dt_str <> "\t" <> message.message_text end)
           |> Enum.join("<br/>")
       end
