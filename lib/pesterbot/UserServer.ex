@@ -82,6 +82,7 @@ defmodule Pesterbot.UserServer do
       "recipient" => %{ "id" => recipient_id},
       "timestamp" => timestamp,
       "message" => message_ } = message
+    message_ = Map.merge(%{ "text" => "" }, message_)
     message_ = Map.merge(%{ "quick_reply" => "" }, message_)
     %{"mid" => message_id,
       "seq" => message_seq,
