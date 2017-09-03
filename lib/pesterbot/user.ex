@@ -1,4 +1,7 @@
 defmodule Pesterbot.User do
+  @moduledoc """
+  Defines the User schema.
+  """
   use Ecto.Schema
 
   schema "users" do

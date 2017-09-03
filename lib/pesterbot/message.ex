@@ -1,4 +1,9 @@
 defmodule Pesterbot.Message do
+  @moduledoc """
+  Defines the Message schema. Corresponds to a message object in the facebook
+  webhook API:
+  developers.facebook.com/docs/messenger-platform/webhook-reference/message
+  """
   use Ecto.Schema
 
   schema "messages" do

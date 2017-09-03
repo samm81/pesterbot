@@ -1,6 +1,9 @@
 import Ecto.Query
 
 defmodule Pesterbot.UserSupervisor do
+  @moduledoc """
+  Supervisor process for UserServers.
+  """
   use Supervisor
 
   require Logger
@@ -34,7 +37,10 @@ defmodule Pesterbot.UserSupervisor do
   def create_user_process(user_id) do
     # first we need to check if the user exists in the db
     # TODO should keep a global table of this rather than requerying the db
-    user_ids_in_db = Repo.all(from user in User, select: user.uid)
+    user_ids_in_db =
+      User
+      |> select([u], u.uid)
+      |> Repo.all()
     case Enum.any?(user_ids_in_db, fn(uid) -> uid == user_id end) do
       true -> :ok
       false ->
@@ -50,9 +56,12 @@ defmodule Pesterbot.UserSupervisor do
   end
 
   def user_ids do
-    Supervisor.which_children(__MODULE__)
+    __MODULE__
+    |> Supervisor.which_children
     |> Enum.map(fn {_, pid, _, _} ->
-      Registry.keys(@user_registry_name, pid) |> List.first
+      @user_registry_name
+      |> Registry.keys(pid)
+      |> List.first
     end)
   end
 

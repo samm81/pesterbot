@@ -1,6 +1,9 @@
 import Ecto.Query
 
 defmodule Pesterbot.Router do
+  @moduledoc """
+  Handles all incoming and outgoing HTTP requests
+  """
   use Plug.Router
   use Plug.Debugger
 
@@ -9,11 +12,8 @@ defmodule Pesterbot.Router do
 
   require Logger
 
-  alias Pesterbot.Repo
-  alias Pesterbot.User
-  alias Pesterbot.Message
-  alias Pesterbot.UserSupervisor
-  alias Pesterbot.UserServer
+  alias Plug.Conn
+  alias Pesterbot.{Repo, User, Message, UserSupervisor, UserServer}
 
   plug Plug.Logger
   plug Plug.Parsers, parsers: [:json], pass: ["text/*"], json_decoder: Poison
@@ -34,9 +34,10 @@ defmodule Pesterbot.Router do
   end
 
   get "/webhook" do
-    %{ "hub.mode" => "subscribe",
-       "hub.challenge" => challenge,
-       "hub.verify_token" => @verify_token } = fetch_query_params(conn).query_params
+    %{"hub.mode" => "subscribe",
+      "hub.challenge" => challenge,
+      "hub.verify_token" => @verify_token
+    } = fetch_query_params(conn).query_params
     send_resp(conn, 200, challenge)
   end
 
@@ -47,21 +48,25 @@ defmodule Pesterbot.Router do
     send_resp(conn, 200, "ok")
   end
 
-  def parse_webhook_params( %{ "object" => "page", "entry" => entries } ) do
+  def parse_webhook_params(%{"object" => "page", "entry" => entries}) do
     for entry <- entries do
       parse_entry(entry)
     end
   end
 
-  def parse_entry( %{ "id" => _pageid, "time" => _time, "messaging" => messages } ) do
+  def parse_entry(%{
+    "id" => _pageid,
+    "time" => _time,
+    "messaging" => messages
+   }) do
     for message <- messages do
       parse_message(message)
     end
   end
 
-  def parse_message( %{ "delivery" => _ } ), do: :noop
+  def parse_message(%{"delivery" => _}), do: :noop
 
-  def parse_message(message = %{ "sender" => %{ "id" => sender_id } }) do
+  def parse_message(%{"sender" => %{"id" => sender_id}} = message) do
     # Ensure that the user has an associated UserServer
     {:ok, _} = UserSupervisor.find_or_create_user(sender_id)
     UserServer.handle_message(sender_id, message)
@@ -70,10 +75,16 @@ defmodule Pesterbot.Router do
   get "/users" do
     page =
       UserSupervisor.db_entries
-      |> Enum.map( fn %User{ first_name: first_name, last_name: last_name, uid: uid } ->
+      |> Enum.map(fn %User{first_name: first_name, last_name: last_name, uid: uid} ->
         "<a href='/users/" <> uid <> "'>" <> first_name <> " " <> last_name <> "</a>"
-      end) |> Enum.join("<br/><br/>")
-    page = "<html><head><meta charset=\"utf-8\"></head><body style\"font:Courier New\">" <> page <> "</body></html>"
+      end)
+      |> Enum.join("<br/><br/>")
+
+    page =
+      ~s(<html><head><meta charset="utf-8"></head><body style="font:Courier New">)
+      <> page
+      <> ~s(</body></html>)
+
     send_resp(conn, 200, page)
   end
 
@@ -91,17 +102,18 @@ defmodule Pesterbot.Router do
           |> Enum.map(fn(message) ->
             datetime = Timex.from_unix(message.timestamp)
             datetime = datetime |> Timex.to_datetime(@default_time_zone)
-            {:ok, dt_str} =
+            datetime =
               case datetime do
                 %Timex.AmbiguousDateTime{} -> datetime.after
                 %DateTime{} -> datetime
                 _ -> :error
-              end |> Timex.format("{UNIX}")
+              end
+            {:ok, dt_str} = datetime |> Timex.format("{UNIX}")
             dt_str <> "\t" <> message.message_text end)
           |> Enum.join("<br/>")
       end
-    page = "<html><head><meta charset=\"utf-8\"></head><body style\"font:Courier New\">" <> page <> "</body></html>"
-    |> String.replace("\t", "&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;")
+    page = ~s(<html><head><meta charset="utf-8"></head><body style"font:Courier New">) <> page <> ~s(</body></html>)
+    page = page |> String.replace("\t", "&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;")
 
     send_resp(conn, 200, page)
   end
@@ -109,8 +121,8 @@ defmodule Pesterbot.Router do
   post "/broadcast" do
     case conn.host do
       "localhost" ->
-        { :ok, "message=" <> message, _ } =
-          Plug.Conn.read_body(conn)
+        {:ok, "message=" <> message, _} =
+          Conn.read_body(conn)
 
         message_all_users!(message)
         send_resp(conn, 200, "ok")
@@ -133,22 +145,26 @@ defmodule Pesterbot.Router do
     HTTPoison.post!(
       "https://graph.facebook.com/v2.6/me/messages?access_token=" <> @page_access_token,
       message,
-      %{ "Content-Type" => "application/json" }
+      %{"Content-Type" => "application/json"}
     )
   end
 
   def read_receipt!(user_id) do
-    Poison.encode!( %{
-      "recipient" => %{ "id" => user_id },
-      "sender_action" => "mark_seen"
-    }) |> fb_send!
+    message =
+      Poison.encode!(%{
+        "recipient" => %{"id" => user_id},
+        "sender_action" => "mark_seen"
+      })
+    message |> fb_send!
   end
 
   def message_user!(user_id, message) do
-    Poison.encode!( %{
-      "recipient" => %{ "id" => user_id },
-      "message" => %{ "text" => message }
-    }) |> fb_send!
+    message =
+      Poison.encode!(%{
+        "recipient" => %{"id" => user_id},
+        "message" => %{"text" => message}
+      })
+    message |> fb_send!
   end
 
   def message_users!(user_ids, message) do
@@ -157,8 +173,8 @@ defmodule Pesterbot.Router do
   end
 
   def message_all_users!(message) do
-    Repo.all(from user in User,
-             select: user.uid)
+    User
+    |> select([u], u.uid)
     |> message_users!(message)
   end
 
@@ -167,46 +183,50 @@ defmodule Pesterbot.Router do
   end
 
   def greeting_text! do
-    message = Poison.encode!( %{
+    message = Poison.encode!(%{
       "setting_type" => "greeting",
-      "greeting" => %{ "text": "what's up boss" }
+      "greeting" => %{"text": "what's up boss"}
     })
-    %HTTPoison.Response{ status_code: 200 } =
+    %HTTPoison.Response{status_code: 200} =
       HTTPoison.post!(
         "https://graph.facebook.com/v2.6/me/thread_settings?access_token=" <> @page_access_token,
         message,
-        %{ "Content-Type" => "application/json" }
+        %{"Content-Type" => "application/json"}
       )
   end
 
   def subscribe do
-    %HTTPoison.Response{ status_code: 200, body: "{\"success\":true}" } =
+    %HTTPoison.Response{status_code: 200, body: ~s({"success":true})} =
       HTTPoison.post!("https://graph.facebook.com/v2.6/me/subscribed_apps?access_token=" <> @page_access_token, "")
   end
 
   def get_ngrok_url do
-    %HTTPoison.Response{ status_code: 200, body: body } =
+    %HTTPoison.Response{status_code: 200, body: body} =
       HTTPoison.get!("localhost:4040/api/tunnels")
-    %{ "tunnels" => [ %{ "public_url" => url } ] } = Poison.decode!(body)
+    %{"tunnels" => [%{"public_url" => url}]} = Poison.decode!(body)
     url
   end
 
   def publish_webhook!(ngrok_url) do
-    params = URI.encode_query( %{
+    params = URI.encode_query(%{
         "object" => "page",
         "verify_token" => @verify_token,
         "callback_url" => ngrok_url <> "/webhook",
         "access_token" => @app_id <> "|" <> @app_secret
     })
-    %HTTPoison.Response{ status_code: 200, body: "{\"success\":true}" } =
+    %HTTPoison.Response{status_code: 200, body: ~s({"success":true})} =
       HTTPoison.post!("https://graph.facebook.com/v2.6/" <> @app_id <> "/subscriptions?" <> params, "")
   end
 
   def get_user!(user_id) do
-    %HTTPoison.Response{ status_code: 200, body: body } =
+    %HTTPoison.Response{status_code: 200, body: body} =
       HTTPoison.get!("https://graph.facebook.com/v2.6/" <> user_id <> "?access_token=" <> @page_access_token)
     user = Poison.decode!(body)
-    %User{first_name: user["first_name"], last_name: user["last_name"], timezone: Integer.to_string(user["timezone"]), uid: user_id}
+    %User{
+      first_name: user["first_name"],
+      last_name: user["last_name"],
+      timezone: Integer.to_string(user["timezone"]), uid: user_id
+    }
   end
 
 end

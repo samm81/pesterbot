@@ -1,5 +1,5 @@
 # Couples more closely to the facebook API
-# https://developers.facebook.com/docs/messenger-platform/webhook-reference/message
+# developers.facebook.com/docs/messenger-platform/webhook-reference/message
 import Ecto.Query
 
 defmodule Pesterbot.Repo.Migrations.PostsToMessages do
@@ -19,15 +19,21 @@ defmodule Pesterbot.Repo.Migrations.PostsToMessages do
 
     flush()
 
-    from(p in "posts",
-      update: [set: [ sender_id: p.uid ]])
+    "posts"
+    |> update([p], set: [sender_id: p.uid])
     |> Pesterbot.Repo.update_all([])
-    from(p in "posts",
-      update: [set: [ message_text: p.data ]])
+    "posts"
+    |> update([p], set: [message_text: p.data])
     |> Pesterbot.Repo.update_all([])
-    # thanks to @Dogbert! https://stackoverflow.com/questions/44743915/ecto-how-to-call-a-function-in-an-update
-    from(p in "posts",
-      update: [set: [timestamp: fragment("EXTRACT(EPOCH FROM ?::timestamp with time zone)", p.time)]])
+    # thanks to @Dogbert!
+    # stackoverflow.com/questions/44743915/ecto-how-to-call-a-function-in-an-update
+    "posts"
+    |> update([p], set: [
+      timestamp: fragment(
+        "EXTRACT(EPOCH FROM ?::timestamp with time zone)",
+        p.time
+      )
+    ])
     |> Pesterbot.Repo.update_all([])
 
     rename table(:posts), to: table(:messages)
@@ -48,14 +54,19 @@ defmodule Pesterbot.Repo.Migrations.PostsToMessages do
 
     flush()
 
-    from(p in "posts",
-      update: [set: [ uid: p.sender_id ]])
+    "posts"
+    |> update([p], set: [uid: p.sender_id])
     |> Pesterbot.Repo.update_all([])
-    from(p in "posts",
-      update: [set: [ data: p.message_text ]])
+    "posts"
+    |> update([p], set: [data: p.message_text])
     |> Pesterbot.Repo.update_all([])
-    from(p in "posts",
-      update: [set: [time: fragment("to_char(to_timestamp(?), 'Dy Mon DD HH24:MI:SS TZ YYYY')", p.timestamp)]])
+    "posts"
+    |> update([p], set: [
+      time: fragment(
+        "to_char(to_timestamp(?), 'Dy Mon DD HH24:MI:SS TZ YYYY')",
+        p.timestamp
+      )
+    ])
     |> Pesterbot.Repo.update_all([])
 
     alter table(:posts) do

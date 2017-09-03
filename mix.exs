@@ -28,12 +28,16 @@ defmodule Pesterbot.Mixfile do
   #
   # Type "mix help deps" for more examples and options
   defp deps do
-    [{:cowboy, "~> 1.0.0"},
-     {:plug, "~> 1.0"},
-     {:httpoison, "~> 0.12"},
-     {:poison, "~> 2.0"},
-     {:timex, "~> 3.1"},
-     {:postgrex, ">= 0.0.0"},
-     {:ecto, "~> 2.0.0"}]
+    [
+      {:cowboy, "~> 1.0.0"},
+      {:plug, "~> 1.0"},
+      {:httpoison, "~> 0.12"},
+      {:poison, "~> 2.0"},
+      {:timex, "~> 3.1"},
+      {:postgrex, ">= 0.0.0"},
+      {:ecto, "~> 2.0.0"},
+      {:dogma, "~> 0.1", only: :dev},
+      {:credo, "~> 0.8", only: [:dev, :test], runtime: false},
+     ]
   end
 end

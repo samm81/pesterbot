@@ -1,4 +1,7 @@
 defmodule Pesterbot.UserServer do
+  @moduledoc """
+  Implements the storage and interaction mechanisms for a user.
+  """
   use GenServer
 
   require Logger
@@ -48,7 +51,7 @@ defmodule Pesterbot.UserServer do
 
     Logger.info("Process created... User ID: #{user_id}")
 
-    {:ok, %__MODULE__{ uid: user_id }}
+    {:ok, %__MODULE__{uid: user_id}}
   end
 
   def handle_call({:respond, message}, _from, state) do
@@ -78,38 +81,44 @@ defmodule Pesterbot.UserServer do
   end
 
   def handle_cast({:store_message, message}, state)  do
-    %{"sender" => %{ "id" => sender_id },
-      "recipient" => %{ "id" => recipient_id},
+    %{"sender" => %{"id" => sender_id},
+      "recipient" => %{"id" => recipient_id},
       "timestamp" => timestamp,
-      "message" => message_ } = message
-    message_ = Map.merge(%{ "text" => "" }, message_)
-    message_ = Map.merge(%{ "quick_reply" => "" }, message_)
+      "message" => message_} = message
+    message_ = Map.merge(%{"text" => ""}, message_)
+    message_ = Map.merge(%{"quick_reply" => ""}, message_)
     %{"mid" => message_id,
       "seq" => message_seq,
       "text" => message_text,
-      "quick_reply" => quick_reply } = message_
+      "quick_reply" => quick_reply} = message_
     timestamp = round(timestamp / 1000)
     json_message = Poison.encode!(message)
     Repo.insert!(
-      %Message{ sender_id: sender_id,
+      %Message{sender_id: sender_id,
                 recipient_id: recipient_id,
                 timestamp: timestamp,
                 message_id: message_id,
                 message_seq: message_seq,
                 message_text: message_text,
                 quick_reply: quick_reply,
-                json_message: json_message }
+                json_message: json_message}
     )
     {:noreply, state}
   end
 
-  def handle_cast({:schedule_next_prompt}, %__MODULE__{ timer_ref: nil } = state) do
+  def handle_cast(
+    {:schedule_next_prompt},
+    %__MODULE__{timer_ref: nil} = state
+  ) do
     updated_state = schedule_next_prompt(state)
     Logger.info("Scheduling next prompt, previous timer_ref was nil, new timer_ref is #{updated_state.timer_ref}")
     {:noreply, updated_state}
   end
 
-  def handle_cast({:schedule_next_prompt}, %__MODULE__{ timer_ref: timer_ref } = state) do
+  def handle_cast(
+    {:schedule_next_prompt},
+    %__MODULE__{timer_ref: timer_ref} = state
+  ) do
     timer_ref |> Process.cancel_timer
     updated_state = schedule_next_prompt(state)
     Logger.info("Scheduling next prompt, previous timer_ref was #{inspect(timer_ref)}, new timer_ref is #{inspect(updated_state.timer_ref)}")
@@ -120,9 +129,9 @@ defmodule Pesterbot.UserServer do
     super(request, state)
   end
 
-  def handle_info(:fetch_data, %__MODULE__{ uid: uid } = state) do
+  def handle_info(:fetch_data, %__MODULE__{uid: uid} = state) do
     db_entry = Repo.get_by!(User, uid: uid)
-    updated_state = %__MODULE__{ state | db_entry: db_entry }
+    updated_state = %__MODULE__{state | db_entry: db_entry}
     {:noreply, updated_state}
   end
 
@@ -139,11 +148,11 @@ defmodule Pesterbot.UserServer do
 
   # Private Functions
 
-
   defp schedule_next_prompt(state) do
-    timer_ref = Process.send_after(self(), :prompt_user, 15 * 60 * 1000) # in 15 minutes
+    # in 15 minutes
+    timer_ref = Process.send_after(self(), :prompt_user, 15 * 60 * 1000)
     Logger.info("Creating a new timer_ref with reference: #{inspect(timer_ref)}")
-    %__MODULE__{ state | timer_ref: timer_ref }
+    %__MODULE__{state | timer_ref: timer_ref}
   end
 
 end
