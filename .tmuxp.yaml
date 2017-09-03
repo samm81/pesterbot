@@ -1,0 +1,14 @@
+session_name: pesterbot
+windows:
+- start_directory: /home/sam/pesterbot
+  panes:
+  - shell_command: vim -S Session.vim
+- focus: 'true'
+  layout: main-vertical
+  start_directory: /home/sam/pesterbot
+  panes:
+  - shell_command:
+    - source tokens.env
+    - git status
+    focus: true
+  - shell_command: ngrok http -bind-tls=true 4000
