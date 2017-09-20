@@ -175,6 +175,7 @@ defmodule Pesterbot.Router do
   def message_all_users!(message) do
     User
     |> select([u], u.uid)
+    |> Repo.all
     |> message_users!(message)
   end
 
