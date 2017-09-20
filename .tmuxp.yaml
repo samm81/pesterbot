@@ -1,11 +1,10 @@
 session_name: pesterbot
+start_directory: /home/maynard/workspace/pesterbot
 windows:
-- start_directory: /home/sam/pesterbot
-  panes:
+- panes:
   - shell_command: vim -S Session.vim
 - focus: 'true'
   layout: main-vertical
-  start_directory: /home/sam/pesterbot
   panes:
   - shell_command:
     - source tokens.env

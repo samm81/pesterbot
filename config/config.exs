@@ -5,8 +5,6 @@ use Mix.Config
 config :pesterbot, Pesterbot.Repo,
   adapter: Ecto.Adapters.Postgres,
   database: "pesterbot_repo",
-  username: "user",
-  password: "pass",
   hostname: "localhost"
 
 

@@ -92,7 +92,7 @@ defmodule Pesterbot.Router do
     messages =
       Repo.all(from message in Message,
                where: message.sender_id == ^uid,
-               order_by: message.timestamp,
+               order_by: [desc: message.timestamp],
                select: map(message, [:timestamp, :message_text]))
     page =
       case messages do
