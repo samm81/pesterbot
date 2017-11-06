@@ -10,4 +10,4 @@ windows:
     - source tokens.env
     - git status
     focus: true
-  - shell_command: ngrok http -bind-tls=true 4000
+  - shell_command: ngrok start --config ngrok.conf messenger
