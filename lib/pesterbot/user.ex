@@ -8,6 +8,8 @@ defmodule Pesterbot.User do
     field :uid, :string
     field :first_name, :string
     field :last_name, :string
+    field :next_message_timestamp, :naive_datetime
+    field :messaging_interval, :integer
     field :timezone, :string
     timestamps()
   end
