@@ -158,12 +158,24 @@ defmodule Pesterbot.Router do
     message |> fb_send!
   end
 
+  def message_user_with_quick_reply!(user_id, message, quick_reply) do
+    message = Poison.encode!(%{
+      "recipient" => %{"id" => user_id},
+      "message" => %{
+        "text" => message,
+        "quick_replies": [ quick_reply ]
+      }
+    })
+    message |> fb_send!
+  end
+
   def message_user!(user_id, message) do
-    message =
-      Poison.encode!(%{
-        "recipient" => %{"id" => user_id},
-        "message" => %{"text" => message}
-      })
+    message = Poison.encode!(%{
+      "recipient" => %{"id" => user_id},
+      "message" => %{
+        "text" => message
+      }
+    })
     message |> fb_send!
   end
 

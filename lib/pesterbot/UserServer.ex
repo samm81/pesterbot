@@ -11,7 +11,7 @@ defmodule Pesterbot.UserServer do
   alias Pesterbot.User
   alias Pesterbot.Message
 
-  defstruct db_entry: %{first_name: "", last_name: "", timezone: "", uid: ""},
+  defstruct db_entry: %User{},
             uid: "",
             timer_ref: nil
 
@@ -55,14 +55,12 @@ defmodule Pesterbot.UserServer do
   end
 
   def handle_call({:respond, message}, _from, state) do
-    response = ""
-    {:reply, response, state}
+    {:reply, :ok, state}
   end
 
   def handle_call({:send, message_to_user}, _from, state) do
     Router.message_user!(state.uid, message_to_user)
-    response = ""
-    {:reply, response, state}
+    {:reply, :ok, state}
   end
 
   def handle_call({:db_entry}, _from, state) do
@@ -80,17 +78,22 @@ defmodule Pesterbot.UserServer do
     {:noreply, state}
   end
 
-  def handle_cast({:store_message, message}, state)  do
+  def handle_cast({:update_user, changeset}, state) do
+    new_state = Repo.update!(changeset)
+    {:noreply, new_state}
+  end
+
+  def handle_cast({:store_message, message}, state) do
     %{"sender" => %{"id" => sender_id},
       "recipient" => %{"id" => recipient_id},
       "timestamp" => timestamp,
       "message" => message_} = message
     message_ = Map.merge(%{"text" => ""}, message_)
-    message_ = Map.merge(%{"quick_reply" => ""}, message_)
+    message_ = Map.merge(%{"quick_reply" => %{ "payload" => "" } }, message_)
     %{"mid" => message_id,
       "seq" => message_seq,
       "text" => message_text,
-      "quick_reply" => quick_reply} = message_
+      "quick_reply" => %{ "payload" => payload } } = message_
     timestamp = round(timestamp / 1000)
     json_message = Poison.encode!(message)
     Repo.insert!(
@@ -100,7 +103,7 @@ defmodule Pesterbot.UserServer do
                 message_id: message_id,
                 message_seq: message_seq,
                 message_text: message_text,
-                quick_reply: quick_reply,
+                quick_reply: payload,
                 json_message: json_message}
     )
     {:noreply, state}
@@ -136,7 +139,12 @@ defmodule Pesterbot.UserServer do
   end
 
   def handle_info(:prompt_user, state) do
-    Router.message_user!(state.uid, "watcha up to")
+    arrow_quick_reply = %{
+      "content_type" => "text",
+      "title" => "^",
+      "payload" => "PREVIOUS_REPLY"
+    }
+    Router.message_user_with_quick_reply!(state.uid, "watcha up to", arrow_quick_reply)
     updated_state = schedule_next_prompt(state) # Reschedule once more
     {:noreply, updated_state}
   end
@@ -148,11 +156,17 @@ defmodule Pesterbot.UserServer do
 
   # Private Functions
 
-  defp schedule_next_prompt(state) do
-    # in 15 minutes
-    timer_ref = Process.send_after(self(), :prompt_user, 15 * 60 * 1000)
+  defp schedule_next_prompt(%__MODULE__{ db_entry: %{ messaging_interval: messaging_interval } } = state) do
+    schedule_next_prompt_after(state, messaging_interval)
+  end
+
+  defp schedule_next_prompt_after(%__MODULE__{ db_entry: db_entry } = state, millis_from_now) do
+    timer_ref = Process.send_after(self(), :prompt_user, millis_from_now)
     Logger.info("Creating a new timer_ref with reference: #{inspect(timer_ref)}")
-    %__MODULE__{state | timer_ref: timer_ref}
+    next_message_timestamp = NaiveDateTime.add(DateTime.utc_now |> DateTime.to_naive, Process.read_timer(timer_ref))
+    changeset = Ecto.Changeset.change db_entry, next_message_timestamp: next_message_timestamp
+    new_db_entry = Repo.update!(changeset)
+    %__MODULE__{state | db_entry: new_db_entry, timer_ref: timer_ref}
   end
 
 end
