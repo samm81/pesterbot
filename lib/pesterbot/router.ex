@@ -161,6 +161,7 @@ defmodule Pesterbot.Router do
   def message_user_with_quick_reply!(user_id, message, quick_reply) do
     message = Poison.encode!(%{
       "recipient" => %{"id" => user_id},
+      "messaging_type" => "UPDATE",
       "message" => %{
         "text" => message,
         "quick_replies": [ quick_reply ]
@@ -172,6 +173,7 @@ defmodule Pesterbot.Router do
   def message_user!(user_id, message) do
     message = Poison.encode!(%{
       "recipient" => %{"id" => user_id},
+      "messaging_type" => "UPDATE",
       "message" => %{
         "text" => message
       }
