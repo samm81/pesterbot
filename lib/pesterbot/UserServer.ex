@@ -11,6 +11,8 @@ defmodule Pesterbot.UserServer do
   alias Pesterbot.User
   alias Pesterbot.Message
 
+  @prompt_text "watcha up to"
+
   defstruct db_entry: %User{},
             uid: "",
             timer_ref: nil
@@ -39,6 +41,10 @@ defmodule Pesterbot.UserServer do
     GenServer.cast(via_tuple(user_id), {:read_receipt})
   end
 
+  def prompt_user(user_id) do
+    GenServer.cast(via_tuple(user_id), {:prompt_user})
+  end
+
   def get_db_entry(user_id) do
     GenServer.call(via_tuple(user_id), {:db_entry})
   end
@@ -47,7 +53,6 @@ defmodule Pesterbot.UserServer do
 
   def init([user_id]) do
     send(self(), :fetch_data)
-    send(self(), :prompt_user)
 
     Logger.info("Process created... User ID: #{user_id}")
 
@@ -83,30 +88,56 @@ defmodule Pesterbot.UserServer do
     {:noreply, new_state}
   end
 
-  def handle_cast({:store_message, message}, state) do
+  def handle_cast({:store_message,
     %{"sender" => %{"id" => sender_id},
       "recipient" => %{"id" => recipient_id},
       "timestamp" => timestamp,
-      "message" => message_} = message
-    message_ = Map.merge(%{"text" => ""}, message_)
-    message_ = Map.merge(%{"quick_reply" => %{ "payload" => "" } }, message_)
+      "message" => message_content} = message
+  }, state) do
     %{"mid" => message_id,
-      "seq" => message_seq,
-      "text" => message_text,
-      "quick_reply" => %{ "payload" => payload } } = message_
+      "seq" => message_seq } = message_content
+    {message_text, quick_reply, nlp} = process_message_content(message_content)
     timestamp = round(timestamp / 1000)
     json_message = Poison.encode!(message)
     Repo.insert!(
       %Message{sender_id: sender_id,
-                recipient_id: recipient_id,
-                timestamp: timestamp,
-                message_id: message_id,
-                message_seq: message_seq,
-                message_text: message_text,
-                quick_reply: payload,
-                json_message: json_message}
+               recipient_id: recipient_id,
+               timestamp: timestamp,
+               message_id: message_id,
+               message_seq: message_seq,
+               message_text: message_text,
+               quick_reply: quick_reply,
+               json_message: json_message}
     )
     {:noreply, state}
+  end
+
+  defp process_message_content(
+    %{"text" => message_text,
+      "quick_reply" => %{ "payload" => payload },
+      "nlp" => %{"entities" => entities} } = message_content
+  ) do
+    {message_text, payload, entities}
+  end
+
+  defp process_message_content(
+    %{"text" => message_text,
+      "nlp" => %{"entities" => entities} } = message_content
+  ) do
+    {message_text, "", entities}
+  end
+
+  defp process_message_content(
+    %{"text" => message_text,
+      "quick_reply" => %{ "payload" => payload } } = message_content
+  ) do
+    {message_text, payload, %{}}
+  end
+
+  defp process_message_content(
+    %{"text" => message_text} = message_content
+  ) do
+    {message_text, "", %{}}
   end
 
   def handle_cast(
@@ -114,7 +145,7 @@ defmodule Pesterbot.UserServer do
     %__MODULE__{timer_ref: nil} = state
   ) do
     updated_state = schedule_next_prompt(state)
-    Logger.info("Scheduling next prompt, previous timer_ref was nil, new timer_ref is #{updated_state.timer_ref}")
+    Logger.info("Scheduling next prompt, previous timer_ref was nil, new timer_ref is #{inspect updated_state.timer_ref}")
     {:noreply, updated_state}
   end
 
@@ -124,8 +155,13 @@ defmodule Pesterbot.UserServer do
   ) do
     timer_ref |> Process.cancel_timer
     updated_state = schedule_next_prompt(state)
-    Logger.info("Scheduling next prompt, previous timer_ref was #{inspect(timer_ref)}, new timer_ref is #{inspect(updated_state.timer_ref)}")
+    Logger.info("Scheduling next prompt, previous timer_ref was #{inspect timer_ref}, new timer_ref is #{inspect updated_state.timer_ref}")
     {:noreply, updated_state}
+  end
+
+  def handle_cast({:prompt_user}, state) do
+    send(self(), :prompt_user)
+    {:noreply, state}
   end
 
   def handle_cast(request, state) do
@@ -135,18 +171,40 @@ defmodule Pesterbot.UserServer do
   def handle_info(:fetch_data, %__MODULE__{uid: uid} = state) do
     db_entry = Repo.get_by!(User, uid: uid)
     updated_state = %__MODULE__{state | db_entry: db_entry}
+
+    current_time = (DateTime.utc_now |> DateTime.to_naive)
+    Logger.info('db_entry.next_message_timestamp: #{inspect db_entry.next_message_timestamp}')
+    Logger.info('current_time: #{inspect current_time}')
+    case NaiveDateTime.compare(db_entry.next_message_timestamp, current_time) do
+      :gt ->
+        Logger.info('next_message_timestamp is in the future, scheduling a prompt at #{inspect db_entry.next_message_timestamp}')
+        updated_state = schedule_next_prompt_at(updated_state, db_entry.next_message_timestamp)
+      _ -> # :eq and :lt
+        Logger.info('next_message_timestamp was in the past, messaging user')
+        send(self(), :prompt_user_and_reschedule)
+    end
+
     {:noreply, updated_state}
   end
 
   def handle_info(:prompt_user, state) do
+    prompt_user_(state.uid)
+    {:noreply, state}
+  end
+
+  def handle_info(:prompt_user_and_reschedule, state) do
+    prompt_user_(state.uid)
+    updated_state = schedule_next_prompt(state) # Reschedule once more
+    {:noreply, updated_state}
+  end
+
+  defp prompt_user_(uid, prompt_text \\ @prompt_text) do
     arrow_quick_reply = %{
       "content_type" => "text",
       "title" => "^",
       "payload" => "PREVIOUS_REPLY"
     }
-    Router.message_user_with_quick_reply!(state.uid, "watcha up to", arrow_quick_reply)
-    updated_state = schedule_next_prompt(state) # Reschedule once more
-    {:noreply, updated_state}
+    Router.message_user_with_quick_reply!(uid, prompt_text, arrow_quick_reply)
   end
 
   def handle_info(msg, state) do
@@ -160,10 +218,19 @@ defmodule Pesterbot.UserServer do
     schedule_next_prompt_after(state, messaging_interval)
   end
 
+  defp schedule_next_prompt_at(%__MODULE__{ db_entry: db_entry } = state, datetime_to_prompt) do
+    current_time = (DateTime.utc_now |> DateTime.to_naive)
+    millis_from_now = NaiveDateTime.diff(datetime_to_prompt, current_time, :milliseconds)
+    schedule_next_prompt_after(state, millis_from_now)
+  end
+
   defp schedule_next_prompt_after(%__MODULE__{ db_entry: db_entry } = state, millis_from_now) do
-    timer_ref = Process.send_after(self(), :prompt_user, millis_from_now)
-    Logger.info("Creating a new timer_ref with reference: #{inspect(timer_ref)}")
-    next_message_timestamp = NaiveDateTime.add(DateTime.utc_now |> DateTime.to_naive, Process.read_timer(timer_ref))
+    timer_ref = Process.send_after(self(), :prompt_user_and_reschedule, millis_from_now)
+    Logger.info("Creating a new timer_ref with reference: #{inspect timer_ref}")
+    Logger.info("Will message user in #{millis_from_now} milliseconds")
+    now = DateTime.utc_now |> DateTime.to_naive
+    next_message_timestamp = NaiveDateTime.add(now, Process.read_timer(timer_ref), :milliseconds)
+    Logger.info("next_message_timestamp: #{inspect next_message_timestamp}")
     changeset = Ecto.Changeset.change db_entry, next_message_timestamp: next_message_timestamp
     new_db_entry = Repo.update!(changeset)
     %__MODULE__{state | db_entry: new_db_entry, timer_ref: timer_ref}
