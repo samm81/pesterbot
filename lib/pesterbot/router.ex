@@ -112,7 +112,7 @@ defmodule Pesterbot.Router do
             dt_str <> "\t" <> message.message_text end)
           |> Enum.join("<br/>")
       end
-    page = ~s(<html><head><meta charset="utf-8"></head><body style"font:Courier New">) <> page <> ~s(</body></html>)
+    page = ~s(<html><head><meta charset="utf-8"></head><body style="font-family: Courier New;"><div>) <> page <> ~s(</div></body></html>)
     page = page |> String.replace("\t", "&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;")
 
     send_resp(conn, 200, page)
