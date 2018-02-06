@@ -35,9 +35,7 @@ defmodule Pesterbot.Mixfile do
       {:poison, "~> 2.0"},
       {:timex, "~> 3.1"},
       {:postgrex, ">= 0.0.0"},
-      {:ecto, "~> 2.2.0"},
-      {:dogma, "~> 0.1", only: :dev},
-      {:credo, "~> 0.8", only: [:dev, :test], runtime: false},
+      {:ecto, "~> 2.2.0"}
      ]
   end
 end
