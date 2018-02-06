@@ -12,6 +12,8 @@ defmodule Pesterbot.UserServer do
   alias Pesterbot.Message
 
   @prompt_text "watcha up to"
+  @default_messaging_interval 15 * 60 * 1000 # 15 minutes in millis
+  @max_messaging_interval 12 * 60 * 60 * 1000 # 12 hours in millis
 
   defstruct db_entry: %User{},
             uid: "",
@@ -144,7 +146,7 @@ defmodule Pesterbot.UserServer do
     {:schedule_next_prompt},
     %__MODULE__{timer_ref: nil} = state
   ) do
-    updated_state = schedule_next_prompt(state)
+    updated_state = schedule_next_prompt_default(state)
     Logger.info("Scheduling next prompt, previous timer_ref was nil, new timer_ref is #{inspect updated_state.timer_ref}")
     {:noreply, updated_state}
   end
@@ -154,7 +156,7 @@ defmodule Pesterbot.UserServer do
     %__MODULE__{timer_ref: timer_ref} = state
   ) do
     timer_ref |> Process.cancel_timer
-    updated_state = schedule_next_prompt(state)
+    updated_state = schedule_next_prompt_default(state)
     Logger.info("Scheduling next prompt, previous timer_ref was #{inspect timer_ref}, new timer_ref is #{inspect updated_state.timer_ref}")
     {:noreply, updated_state}
   end
@@ -181,7 +183,7 @@ defmodule Pesterbot.UserServer do
         updated_state = schedule_next_prompt_at(updated_state, db_entry.next_message_timestamp)
       _ -> # :eq and :lt
         Logger.info('next_message_timestamp was in the past, messaging user')
-        send(self(), :prompt_user_and_reschedule)
+        send(self(), :prompt_user_and_reschedule_default)
     end
 
     {:noreply, updated_state}
@@ -192,9 +194,15 @@ defmodule Pesterbot.UserServer do
     {:noreply, state}
   end
 
-  def handle_info(:prompt_user_and_reschedule, state) do
+  def handle_info(:prompt_user_and_reschedule_default, state) do
     prompt_user_(state.uid)
-    updated_state = schedule_next_prompt(state) # Reschedule once more
+    updated_state = schedule_next_prompt_default(state)
+    {:noreply, updated_state}
+  end
+
+  def handle_info(:prompt_user_and_reschedule_backoff, state) do
+    prompt_user_(state.uid)
+    updated_state = schedule_next_prompt_backoff(state)
     {:noreply, updated_state}
   end
 
@@ -212,10 +220,28 @@ defmodule Pesterbot.UserServer do
     {:noreply, state}
   end
 
-  # Private Functions
+  @doc """
+  Creates a timer which will prompt the user after the default messaging interval.
+  This should be called when resetting the exponential backoff -
+  e.g. when the user messages us back.
+  """
+  defp schedule_next_prompt_default(state) do
+    Logger.info("scheduling next prompt with default message interval #{@default_messaging_interval}")
+    schedule_next_prompt_after(state, @default_messaging_interval)
+  end
 
-  defp schedule_next_prompt(%__MODULE__{ db_entry: %{ messaging_interval: messaging_interval } } = state) do
-    schedule_next_prompt_after(state, messaging_interval)
+  @doc """
+  Looks at the amount of time we waited before prompting the user last time and
+  makes that value larger. Then creates a creates a timer that prompts the user
+  after this longer amount of time has passed.
+  This should be called when we want to prompt the user again, but they haven't
+  gotten back to us yet.
+  """
+  defp schedule_next_prompt_backoff(%__MODULE__{ db_entry: db_entry } = state) do
+    new_messaging_interval = db_entry.messaging_interval * 2 |> min(@max_messaging_interval)
+    Logger.info("scheduling next prompt, but backing off, previous interval was #{db_entry.messaging_interval} new messaging interval is #{new_messaging_interval}")
+    changeset = Ecto.Changeset.change db_entry, messaging_interval: new_messaging_interval
+    schedule_next_prompt_after(state, new_messaging_interval, changeset)
   end
 
   defp schedule_next_prompt_at(%__MODULE__{ db_entry: db_entry } = state, datetime_to_prompt) do
@@ -225,15 +251,27 @@ defmodule Pesterbot.UserServer do
   end
 
   defp schedule_next_prompt_after(%__MODULE__{ db_entry: db_entry } = state, millis_from_now) do
-    timer_ref = Process.send_after(self(), :prompt_user_and_reschedule, millis_from_now)
+    {timer_ref, next_message_timestamp} = make_prompt_timer(millis_from_now)
+    updated_changeset = Ecto.Changeset.change db_entry, next_message_timestamp: next_message_timestamp
+    new_db_entry = Repo.update!(updated_changeset)
+    %__MODULE__{state | db_entry: new_db_entry, timer_ref: timer_ref}
+  end
+
+  defp schedule_next_prompt_after(%__MODULE__{ db_entry: db_entry } = state, millis_from_now, changeset) do
+    {timer_ref, next_message_timestamp} = make_prompt_timer(millis_from_now)
+    updated_changeset = Ecto.Changeset.change changeset, next_message_timestamp: next_message_timestamp
+    new_db_entry = Repo.update!(updated_changeset)
+    %__MODULE__{state | db_entry: new_db_entry, timer_ref: timer_ref}
+  end
+
+  defp make_prompt_timer(millis_from_now) do
+    timer_ref = Process.send_after(self(), :prompt_user_and_reschedule_backoff, millis_from_now)
     Logger.info("Creating a new timer_ref with reference: #{inspect timer_ref}")
     Logger.info("Will message user in #{millis_from_now} milliseconds")
     now = DateTime.utc_now |> DateTime.to_naive
     next_message_timestamp = NaiveDateTime.add(now, Process.read_timer(timer_ref), :milliseconds)
     Logger.info("next_message_timestamp: #{inspect next_message_timestamp}")
-    changeset = Ecto.Changeset.change db_entry, next_message_timestamp: next_message_timestamp
-    new_db_entry = Repo.update!(changeset)
-    %__MODULE__{state | db_entry: new_db_entry, timer_ref: timer_ref}
+    {timer_ref, next_message_timestamp}
   end
 
 end
