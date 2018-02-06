@@ -2,20 +2,21 @@ defmodule Pesterbot.Mixfile do
   use Mix.Project
 
   def project do
-    [app: :pesterbot,
-     version: "0.0.5",
-     elixir: "~> 1.2",
-     build_embedded: Mix.env == :prod,
-     start_permanent: Mix.env == :prod,
-     deps: deps()]
+    [
+      app: :pesterbot,
+      version: "0.0.5",
+      elixir: "~> 1.2",
+      build_embedded: Mix.env() == :prod,
+      start_permanent: Mix.env() == :prod,
+      deps: deps()
+    ]
   end
 
   # Configuration for the OTP application
   #
   # Type "mix help compile.app" for more information
   def application do
-    [extra_applications: [:logger],
-    mod: {Pesterbot, []}]
+    [extra_applications: [:logger], mod: {Pesterbot, []}]
   end
 
   # Dependencies can be Hex packages:
@@ -36,6 +37,6 @@ defmodule Pesterbot.Mixfile do
       {:timex, "~> 3.1"},
       {:postgrex, ">= 0.0.0"},
       {:ecto, "~> 2.2.0"}
-     ]
+    ]
   end
 end

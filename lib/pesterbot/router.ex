@@ -7,7 +7,7 @@ defmodule Pesterbot.Router do
   use Plug.Router
   use Plug.Debugger
 
-  Application.ensure_all_started :timex
+  Application.ensure_all_started(:timex)
   use Timex
 
   require Logger
@@ -15,10 +15,10 @@ defmodule Pesterbot.Router do
   alias Plug.Conn
   alias Pesterbot.{Repo, User, Message, UserSupervisor, UserServer}
 
-  plug Plug.Logger
-  plug Plug.Parsers, parsers: [:json], pass: ["text/*"], json_decoder: Poison
-  plug :match
-  plug :dispatch
+  plug(Plug.Logger)
+  plug(Plug.Parsers, parsers: [:json], pass: ["text/*"], json_decoder: Poison)
+  plug(:match)
+  plug(:dispatch)
 
   @app_id System.get_env("APP_ID")
   @app_secret System.get_env("APP_SECRET")
@@ -29,15 +29,17 @@ defmodule Pesterbot.Router do
   @default_time_zone "America/Chicago"
 
   def init(_opts) do
-    #subscribe()
-    #greeting_text!()
+    # subscribe()
+    # greeting_text!()
   end
 
   get "/webhook" do
-    %{"hub.mode" => "subscribe",
+    %{
+      "hub.mode" => "subscribe",
       "hub.challenge" => challenge,
       "hub.verify_token" => @verify_token
     } = fetch_query_params(conn).query_params
+
     send_resp(conn, 200, challenge)
   end
 
@@ -55,10 +57,10 @@ defmodule Pesterbot.Router do
   end
 
   def parse_entry(%{
-    "id" => _pageid,
-    "time" => _time,
-    "messaging" => messages
-   }) do
+        "id" => _pageid,
+        "time" => _time,
+        "messaging" => messages
+      }) do
     for message <- messages do
       parse_message(message)
     end
@@ -74,46 +76,64 @@ defmodule Pesterbot.Router do
 
   get "/users" do
     page =
-      UserSupervisor.db_entries
+      UserSupervisor.db_entries()
       |> Enum.map(fn %User{first_name: first_name, last_name: last_name, uid: uid} ->
         "<a href='/users/" <> uid <> "'>" <> first_name <> " " <> last_name <> "</a>"
       end)
       |> Enum.join("<br/><br/>")
 
     page =
-      ~s(<html><head><meta charset="utf-8"></head><body style="font:Courier New">)
-      <> page
-      <> ~s(</body></html>)
+      ~s(<html><head><meta charset="utf-8"></head><body style="font:Courier New">) <>
+        page <> ~s(</body></html>)
 
     send_resp(conn, 200, page)
   end
 
   get "/users/:uid" do
     messages =
-      Repo.all(from message in Message,
-               where: message.sender_id == ^uid,
-               order_by: [desc: message.timestamp],
-               select: map(message, [:timestamp, :message_text]))
+      Repo.all(
+        from(
+          message in Message,
+          where: message.sender_id == ^uid,
+          order_by: [desc: message.timestamp],
+          select: map(message, [:timestamp, :message_text])
+        )
+      )
+
     page =
       case messages do
-        [] -> "user #{uid} not available!"
+        [] ->
+          "user #{uid} not available!"
+
         _ ->
           messages
-          |> Enum.map(fn(message) ->
+          |> Enum.map(fn message ->
             datetime = Timex.from_unix(message.timestamp)
             datetime = datetime |> Timex.to_datetime(@default_time_zone)
+
             datetime =
               case datetime do
                 %Timex.AmbiguousDateTime{} -> datetime.after
                 %DateTime{} -> datetime
                 _ -> :error
               end
+
             {:ok, dt_str} = datetime |> Timex.format("{UNIX}")
-            dt_str <> "\t" <> message.message_text end)
+            dt_str <> "\t" <> message.message_text
+          end)
           |> Enum.join("<br/>")
       end
-    page = ~s(<html><head><meta charset="utf-8"></head><body style="font-family: Courier New;"><div>) <> page <> ~s(</div></body></html>)
-    page = page |> String.replace("\t", "&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;")
+
+    page =
+      ~s(<html><head><meta charset="utf-8"></head><body style="font-family: Courier New;"><div>) <>
+        page <> ~s(</div></body></html>)
+
+    page =
+      page
+      |> String.replace(
+        "\t",
+        "&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;"
+      )
 
     send_resp(conn, 200, page)
   end
@@ -121,11 +141,11 @@ defmodule Pesterbot.Router do
   post "/broadcast" do
     case conn.host do
       "localhost" ->
-        {:ok, "message=" <> message, _} =
-          Conn.read_body(conn)
+        {:ok, "message=" <> message, _} = Conn.read_body(conn)
 
         message_all_users!(message)
         send_resp(conn, 200, "ok")
+
       _ ->
         send_resp(conn, 400, "oops")
     end
@@ -139,7 +159,7 @@ defmodule Pesterbot.Router do
     send_resp(conn, 404, "oops")
   end
 
-  HTTPoison.start
+  HTTPoison.start()
 
   def fb_send!(message) do
     HTTPoison.post!(
@@ -155,41 +175,46 @@ defmodule Pesterbot.Router do
         "recipient" => %{"id" => user_id},
         "sender_action" => "mark_seen"
       })
+
     message |> fb_send!
   end
 
   def message_user_with_quick_reply!(user_id, message, quick_reply) do
-    message = Poison.encode!(%{
-      "recipient" => %{"id" => user_id},
-      "messaging_type" => "UPDATE",
-      "message" => %{
-        "text" => message,
-        "quick_replies": [ quick_reply ]
-      }
-    })
+    message =
+      Poison.encode!(%{
+        "recipient" => %{"id" => user_id},
+        "messaging_type" => "UPDATE",
+        "message" => %{
+          "text" => message,
+          quick_replies: [quick_reply]
+        }
+      })
+
     message |> fb_send!
   end
 
   def message_user!(user_id, message) do
-    message = Poison.encode!(%{
-      "recipient" => %{"id" => user_id},
-      "messaging_type" => "UPDATE",
-      "message" => %{
-        "text" => message
-      }
-    })
+    message =
+      Poison.encode!(%{
+        "recipient" => %{"id" => user_id},
+        "messaging_type" => "UPDATE",
+        "message" => %{
+          "text" => message
+        }
+      })
+
     message |> fb_send!
   end
 
   def message_users!(user_ids, message) do
     user_ids
-    |> Enum.map(fn(user_id) -> message_user!(user_id, message) end)
+    |> Enum.map(fn user_id -> message_user!(user_id, message) end)
   end
 
   def message_all_users!(message) do
     User
     |> select([u], u.uid)
-    |> Repo.all
+    |> Repo.all()
     |> message_users!(message)
   end
 
@@ -198,10 +223,12 @@ defmodule Pesterbot.Router do
   end
 
   def greeting_text! do
-    message = Poison.encode!(%{
-      "setting_type" => "greeting",
-      "greeting" => %{"text": "what's up boss"}
-    })
+    message =
+      Poison.encode!(%{
+        "setting_type" => "greeting",
+        "greeting" => %{text: "what's up boss"}
+      })
+
     %HTTPoison.Response{status_code: 200} =
       HTTPoison.post!(
         "https://graph.facebook.com/v2.6/me/thread_settings?access_token=" <> @page_access_token,
@@ -212,36 +239,49 @@ defmodule Pesterbot.Router do
 
   def subscribe do
     %HTTPoison.Response{status_code: 200, body: ~s({"success":true})} =
-      HTTPoison.post!("https://graph.facebook.com/v2.6/me/subscribed_apps?access_token=" <> @page_access_token, "")
+      HTTPoison.post!(
+        "https://graph.facebook.com/v2.6/me/subscribed_apps?access_token=" <> @page_access_token,
+        ""
+      )
   end
 
   def get_ngrok_url do
     %HTTPoison.Response{status_code: 200, body: body} =
       HTTPoison.get!("localhost:4040/api/tunnels")
+
     %{"tunnels" => [%{"public_url" => url}]} = Poison.decode!(body)
     url
   end
 
   def publish_webhook!(ngrok_url) do
-    params = URI.encode_query(%{
+    params =
+      URI.encode_query(%{
         "object" => "page",
         "verify_token" => @verify_token,
         "callback_url" => ngrok_url <> "/webhook",
         "access_token" => @app_id <> "|" <> @app_secret
-    })
+      })
+
     %HTTPoison.Response{status_code: 200, body: ~s({"success":true})} =
-      HTTPoison.post!("https://graph.facebook.com/v2.6/" <> @app_id <> "/subscriptions?" <> params, "")
+      HTTPoison.post!(
+        "https://graph.facebook.com/v2.6/" <> @app_id <> "/subscriptions?" <> params,
+        ""
+      )
   end
 
   def get_user!(user_id) do
     %HTTPoison.Response{status_code: 200, body: body} =
-      HTTPoison.get!("https://graph.facebook.com/v2.6/" <> user_id <> "?access_token=" <> @page_access_token)
+      HTTPoison.get!(
+        "https://graph.facebook.com/v2.6/" <> user_id <> "?access_token=" <> @page_access_token
+      )
+
     user = Poison.decode!(body)
+
     %User{
       first_name: user["first_name"],
       last_name: user["last_name"],
-      timezone: Integer.to_string(user["timezone"]), uid: user_id
+      timezone: Integer.to_string(user["timezone"]),
+      uid: user_id
     }
   end
-
 end

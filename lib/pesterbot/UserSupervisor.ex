@@ -41,8 +41,11 @@ defmodule Pesterbot.UserSupervisor do
       User
       |> select([u], u.uid)
       |> Repo.all()
-    case Enum.any?(user_ids_in_db, fn(uid) -> uid == user_id end) do
-      true -> :ok
+
+    case Enum.any?(user_ids_in_db, fn uid -> uid == user_id end) do
+      true ->
+        :ok
+
       false ->
         Logger.info("Inserting a new user into the db, user_id: #{user_id}")
         Repo.insert!(Router.get_user!(user_id))
@@ -57,17 +60,17 @@ defmodule Pesterbot.UserSupervisor do
 
   def user_ids do
     __MODULE__
-    |> Supervisor.which_children
+    |> Supervisor.which_children()
     |> Enum.map(fn {_, pid, _, _} ->
       @user_registry_name
       |> Registry.keys(pid)
-      |> List.first
+      |> List.first()
     end)
   end
 
   def db_entries do
     user_ids()
-    |> Enum.map(&(UserServer.get_db_entry(&1)))
+    |> Enum.map(&UserServer.get_db_entry(&1))
   end
 
   def init(_) do
@@ -78,5 +81,4 @@ defmodule Pesterbot.UserSupervisor do
     # strategy set to `:simple_one_for_one` to handle dynamic child processes.
     supervise(children, strategy: :simple_one_for_one)
   end
-
 end
