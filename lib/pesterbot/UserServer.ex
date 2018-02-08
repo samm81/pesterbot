@@ -153,7 +153,7 @@ defmodule Pesterbot.UserServer do
         {:schedule_next_prompt},
         %__MODULE__{timer_ref: nil} = state
       ) do
-    updated_state = schedule_next_prompt_default(state)
+    updated_state = schedule_next_prompt_default_interval(state)
 
     Logger.info(
       "Scheduling next prompt, previous timer_ref was nil, new timer_ref is #{
@@ -169,7 +169,7 @@ defmodule Pesterbot.UserServer do
         %__MODULE__{timer_ref: timer_ref} = state
       ) do
     timer_ref |> Process.cancel_timer()
-    updated_state = schedule_next_prompt_default(state)
+    updated_state = schedule_next_prompt_default_interval(state)
 
     Logger.info(
       "Scheduling next prompt, previous timer_ref was #{inspect(timer_ref)}, new timer_ref is #{
@@ -210,7 +210,7 @@ defmodule Pesterbot.UserServer do
       # :eq and :lt
       _ ->
         Logger.info('next_message_timestamp was in the past, messaging user')
-        send(self(), :prompt_user_and_reschedule_default)
+        send(self(), :prompt_user_and_reschedule_stored)
     end
 
     {:noreply, updated_state}
@@ -223,13 +223,19 @@ defmodule Pesterbot.UserServer do
 
   def handle_info(:prompt_user_and_reschedule_default, state) do
     prompt_user_(state.uid)
-    updated_state = schedule_next_prompt_default(state)
+    updated_state = schedule_next_prompt_default_interval(state)
+    {:noreply, updated_state}
+  end
+
+  def handle_info(:prompt_user_and_reschedule_stored, state) do
+    prompt_user_(state.uid)
+    updated_state = schedule_next_prompt_stored_interval(state)
     {:noreply, updated_state}
   end
 
   def handle_info(:prompt_user_and_reschedule_backoff, state) do
     prompt_user_(state.uid)
-    updated_state = schedule_next_prompt_backoff(state)
+    updated_state = schedule_next_prompt_backoff_interval(state)
     {:noreply, updated_state}
   end
 
@@ -253,12 +259,27 @@ defmodule Pesterbot.UserServer do
   This should be called when resetting the exponential backoff -
   e.g. when the user messages us back.
   """
-  defp schedule_next_prompt_default(state) do
+  defp schedule_next_prompt_default_interval(%__MODULE__{db_entry: db_entry} = state) do
     Logger.info(
       "scheduling next prompt with default message interval #{@default_messaging_interval}"
     )
 
-    schedule_next_prompt_after(state, @default_messaging_interval)
+    changeset = Ecto.Changeset.change(db_entry, messaging_interval: @default_messaging_interval)
+    schedule_next_prompt_after(state, @default_messaging_interval, changeset)
+  end
+
+  @doc """
+  Creates a timer which will prompt the user after the default messaging interval
+  that is stored in the database.
+  This should be used in one case: loading the user from the database and the
+  previous prompt time was behind the current time.
+  """
+  defp schedule_next_prompt_stored_interval(%__MODULE__{db_entry: db_entry} = state) do
+    stored_interval = db_entry.messaging_interval
+    Logger.info("scheduling next prompt with stored message interval #{stored_interval}")
+
+    changeset = Ecto.Changeset.change(db_entry, messaging_interval: stored_interval)
+    schedule_next_prompt_after(state, stored_interval, changeset)
   end
 
   @doc """
@@ -268,7 +289,7 @@ defmodule Pesterbot.UserServer do
   This should be called when we want to prompt the user again, but they haven't
   gotten back to us yet.
   """
-  defp schedule_next_prompt_backoff(%__MODULE__{db_entry: db_entry} = state) do
+  defp schedule_next_prompt_backoff_interval(%__MODULE__{db_entry: db_entry} = state) do
     new_messaging_interval = (db_entry.messaging_interval * 2) |> min(@max_messaging_interval)
 
     Logger.info(
