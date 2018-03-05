@@ -105,20 +105,26 @@ defmodule Pesterbot.UserServer do
         state
       ) do
     %{"mid" => message_id, "seq" => message_seq} = message_content
-    {message_text, quick_reply, nlp} = process_message_content(message_content)
-    timestamp = round(timestamp / 1000)
-    json_message = Poison.encode!(message)
 
-    Repo.insert!(%Message{
-      sender_id: sender_id,
-      recipient_id: recipient_id,
-      timestamp: timestamp,
-      message_id: message_id,
-      message_seq: message_seq,
-      message_text: message_text,
-      quick_reply: quick_reply,
-      json_message: json_message
-    })
+    case process_message_content(message_content) do
+      {:ok, {message_text, quick_reply, nlp}} ->
+        timestamp = round(timestamp / 1000)
+        json_message = Poison.encode!(message)
+
+        Repo.insert!(%Message{
+          sender_id: sender_id,
+          recipient_id: recipient_id,
+          timestamp: timestamp,
+          message_id: message_id,
+          message_seq: message_seq,
+          message_text: message_text,
+          quick_reply: quick_reply,
+          json_message: json_message
+        })
+
+      {:error, reason} ->
+        Logger.error("Failed to process message content #{message_content} for reason #{reason}")
+    end
 
     {:noreply, state}
   end
@@ -130,23 +136,27 @@ defmodule Pesterbot.UserServer do
            "nlp" => %{"entities" => entities}
          } = message_content
        ) do
-    {message_text, payload, entities}
+    {:ok, {message_text, payload, entities}}
   end
 
   defp process_message_content(
          %{"text" => message_text, "nlp" => %{"entities" => entities}} = message_content
        ) do
-    {message_text, "", entities}
+    {:ok, {message_text, "", entities}}
   end
 
   defp process_message_content(
          %{"text" => message_text, "quick_reply" => %{"payload" => payload}} = message_content
        ) do
-    {message_text, payload, %{}}
+    {:ok, {message_text, payload, %{}}}
   end
 
   defp process_message_content(%{"text" => message_text} = message_content) do
-    {message_text, "", %{}}
+    {:ok, {message_text, "", %{}}}
+  end
+
+  defp process_message_content(message_content) do
+    {:error, :unknown_message_content}
   end
 
   def handle_cast(
