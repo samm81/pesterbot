@@ -123,7 +123,7 @@ defmodule Pesterbot.UserServer do
         })
 
       {:error, reason} ->
-        Logger.error("Failed to process message content #{message_content} for reason #{reason}")
+        Logger.error("Failed to process message content #{inspect(message_content)} for reason #{reason}")
     end
 
     {:noreply, state}
