@@ -9,5 +9,6 @@ windows:
   - shell_command:
     - source tokens.env
     - git status
+    - echo "iex -S mix"
     focus: true
   - shell_command: ngrok start --config ngrok.conf messenger
