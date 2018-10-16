@@ -28,6 +28,8 @@ defmodule Pesterbot.Router do
 
   @default_time_zone "America/Chicago"
 
+  @page_size 500
+
   def init(_opts) do
     # subscribe()
     # greeting_text!()
@@ -90,6 +92,35 @@ defmodule Pesterbot.Router do
   end
 
   get "/users/:uid" do
+    params = fetch_query_params(conn).query_params
+    dump_messages_as_html(conn, uid, params)
+  end
+
+  def dump_messages_as_html(conn, uid, %{"page" => pagestr}) do
+    case Integer.parse(pagestr) do
+      {page, _remainder} ->
+        offset = @page_size * (page - 1)
+
+        messages =
+          Repo.all(
+            from(
+              message in Message,
+              where: message.sender_id == ^uid,
+              order_by: [desc: message.timestamp],
+              limit: @page_size,
+              offset: ^offset,
+              select: map(message, [:timestamp, :message_text])
+            )
+          )
+
+        format_messages_as_html(conn, uid, messages)
+
+      :error ->
+        send_resp(conn, 400, "page param #{pagestr} invalid, does not parse to integer")
+    end
+  end
+
+  def dump_messages_as_html(conn, uid, %{}) do
     messages =
       Repo.all(
         from(
@@ -100,10 +131,14 @@ defmodule Pesterbot.Router do
         )
       )
 
+    format_messages_as_html(conn, uid, messages)
+  end
+
+  def format_messages_as_html(conn, uid, messages) do
     page =
       case messages do
         [] ->
-          "user #{uid} not available!"
+          "user #{uid} not available, or page param is too large"
 
         _ ->
           messages
