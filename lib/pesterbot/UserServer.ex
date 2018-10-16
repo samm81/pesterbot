@@ -36,7 +36,7 @@ defmodule Pesterbot.UserServer do
     GenServer.cast(user, {:schedule_next_prompt})
     GenServer.cast(user, {:store_message, message})
     GenServer.cast(user, {:read_receipt})
-    GenServer.call(user, {:respond, message})
+    GenServer.call(user, {:respond, message}, 15_000)
   end
 
   def message_user(user_id, message_to_user) do
@@ -123,7 +123,9 @@ defmodule Pesterbot.UserServer do
         })
 
       {:error, reason} ->
-        Logger.error("Failed to process message content #{inspect(message_content)} for reason #{reason}")
+        Logger.error(
+          "Failed to process message content #{inspect(message_content)} for reason #{reason}"
+        )
     end
 
     {:noreply, state}
