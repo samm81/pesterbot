@@ -198,7 +198,7 @@ defmodule Pesterbot.Router do
 
   def fb_send!(message) do
     HTTPoison.post!(
-      "https://graph.facebook.com/v2.6/me/messages?access_token=" <> @page_access_token,
+      "https://graph.facebook.com/v3.2/me/messages?access_token=" <> @page_access_token,
       message,
       %{"Content-Type" => "application/json"}
     )
