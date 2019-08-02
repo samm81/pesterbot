@@ -104,7 +104,7 @@ defmodule Pesterbot.UserServer do
          } = message},
         state
       ) do
-    %{"mid" => message_id, "seq" => message_seq} = message_content
+    %{"mid" => message_id} = message_content
 
     case process_message_content(message_content) do
       {:ok, {message_text, quick_reply, nlp}} ->
@@ -116,7 +116,7 @@ defmodule Pesterbot.UserServer do
           recipient_id: recipient_id,
           timestamp: timestamp,
           message_id: message_id,
-          message_seq: message_seq,
+          message_seq: 0,
           message_text: message_text,
           quick_reply: quick_reply,
           json_message: json_message
