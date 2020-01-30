@@ -85,7 +85,7 @@ defmodule Pesterbot.Router do
       |> Enum.join("<br/><br/>")
 
     page =
-      ~s(<html><head><meta charset="utf-8"></head><body style="font:Courier New">) <>
+      ~s(<html><head><meta charset="utf-8"></head><body style="font:monospace">) <>
         page <> ~s(</body></html>)
 
     send_resp(conn, 200, page)
@@ -160,7 +160,7 @@ defmodule Pesterbot.Router do
       end
 
     page =
-      ~s(<html><head><meta charset="utf-8"></head><body style="font-family: Courier New;"><div>) <>
+      ~s(<html><head><meta charset="utf-8"></head><body style="font-family: monospace;"><div>) <>
         page <> ~s(</div></body></html>)
 
     page =
